@@ -1,5 +1,5 @@
 import os
-import splitfolders 
+# import splitfolders 
 import pdb
 import os
 import numpy as np
@@ -24,21 +24,26 @@ if __name__ == "__main__":
 
 
 # creating train / val /test
-    ROOT_DIR = '../data'
-    NEW_DIR = '/splitted/dataset'
-    CLASSES = ["covid", "pneumonia", "regular"]
-    IMAGE_DATASET_DIR = "../data/image_dataset"
+    DATA_DIR = 'data'
+    TRAIN_DIR = 'train_dataset'
+    TEST_DIR = 'test_dataset'
+    VAL_DIR = 'val_dataset'
+    # NEW_DIR = '/splitted/dataset'
+    CLASSES = ["1", "2", "3"]
+    IMAGE_DATASET_DIR = "data/image_dataset"
 
     for cls in CLASSES:
-        os.makedirs(ROOT_DIR+ NEW_DIR + '_clientA/' + cls)
-        os.makedirs(ROOT_DIR + NEW_DIR +'_clientB/' + cls)
-        os.makedirs(ROOT_DIR + NEW_DIR + '_clientC/' + cls)
-        
+        os.makedirs(os.path.join(TRAIN_DIR, cls))
+        os.makedirs(os.path.join(TEST_DIR, cls))
+        os.makedirs(os.path.join(VAL_DIR, cls))
+
     ## creating partition of the data after shuffeling
+    val_ratio = 0.20
+    test_ratio = 0.20
 
     for cls in CLASSES:
         src = os.path.join(IMAGE_DATASET_DIR, cls) # folder to copy images from
-        pdb.set_trace()
+        # pdb.set_trace()
         print(src)
 
         allFileNames = os.listdir(src)
@@ -46,8 +51,11 @@ if __name__ == "__main__":
 
         ## here 0.75 = training ratio , (0.95-0.75) = validation ratio , (1-0.95) =  
         ##training ratio  
-        train_FileNames,val_FileNames,test_FileNames = np.split(np.array(allFileNames),[int(len(allFileNames)*0.4),int(len(allFileNames)*0.70)])
-
+        # train_FileNames,val_FileNames,test_FileNames = np.split(np.array(allFileNames),[int(len(allFileNames)*0.7),int(len(allFileNames)*0.85)])
+        train_FileNames, val_FileNames, test_FileNames = np.split(np.array(allFileNames),
+                                                                  [int(len(allFileNames) * (1 - (val_ratio + test_ratio))),
+                                                                   int(len(allFileNames) * (1 - val_ratio)),
+                                                                   ])
         # #Converting file names from array to list
 
         train_FileNames = [src+'/'+ name for name in train_FileNames]
@@ -62,12 +70,12 @@ if __name__ == "__main__":
         ## Copy pasting images to target directory
 
         for name in train_FileNames:
-            shutil.copy(name, ROOT_DIR+ NEW_DIR+'_clientA/'+cls )
+            shutil.copy(name, os.path.join(TRAIN_DIR, cls))
 
 
         for name in val_FileNames:
-            shutil.copy(name, ROOT_DIR + NEW_DIR+'_clientB/'+cls )
+            shutil.copy(name, os.path.join(VAL_DIR, cls))
 
 
         for name in test_FileNames:
-            shutil.copy(name, ROOT_DIR + NEW_DIR+'_clientC/'+cls )
+            shutil.copy(name, os.path.join(TEST_DIR, cls))
