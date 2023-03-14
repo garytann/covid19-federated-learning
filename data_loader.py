@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import pathlib 
 from imutils import paths
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 from torchvision.transforms import ToTensor
 import pdb
 import PIL
@@ -50,6 +50,13 @@ train_covid_dataset = CovidUltrasoundDataset(annotations_file=train_label_path,
 test_covid_dataset = CovidUltrasoundDataset(annotations_file=test_label_path,
                                       img_dir=test_image_data_path
                                       )
+# TODO 
+'''
+1. create the split for the train and test for each organization
+'''
+# TRAIN ORG 1,2,3
+
+# TEST ORG 1,2,3                                
     
 train_dataloader = DataLoader(train_covid_dataset, batch_size=64, shuffle=True)
 test_dataloader = DataLoader(test_covid_dataset, batch_size=64, shuffle=True)
