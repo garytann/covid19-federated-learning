@@ -6,6 +6,8 @@ import numpy as np
 import os
 import torchvision
 from typing import OrderedDict
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from substra import Client
 from substra.sdk.schemas import DatasetSpec
@@ -36,13 +38,14 @@ import torch.nn.functional as F
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=5)
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
         self.conv2 = nn.Conv2d(32, 32, kernel_size=5)
         self.conv3 = nn.Conv2d(32, 64, kernel_size=5)
         self.fc1 = nn.Linear(3 * 3 * 64, 256)
         self.fc2 = nn.Linear(256, 10)
 
     def forward(self, x, eval=False):
+        # pdb.set_trace()
         x = F.relu(self.conv1(x))
         x = F.relu(F.max_pool2d(self.conv2(x), 2))
         x = F.dropout(x, p=0.5, training=not eval)
@@ -131,47 +134,34 @@ class VGG(nn.Module):
         x = self.classifier(x)
         return x
 
-class MyAlgo(TorchFedAvgAlgo):
-    def __init__(self):
-        super().__init__(
-            model=model,
-            criterion=criterion,
-            optimizer=optimizer,
-            index_generator=index_generator,
-            dataset=TorchDataset,
-            seed=seed,
-            use_gpu=True,
-        )
-
-class TorchDataset(CovidUltrasoundDataset):
+class TorchDataset(torch.utils.data.Dataset):
     def __init__(self, datasamples, is_inference: bool):
         self.x = datasamples["images"]
         self.y = datasamples["labels"]
         self.is_inference = is_inference
 
-    # def __getitem__(self, idx):
+    def __getitem__(self, idx):
 
-    #     if self.is_inference:
-    #         x = torch.FloatTensor(self.x[idx][None, ...]) / 255
-    #         return x
+        if self.is_inference:
+            x = torch.FloatTensor(self.x[idx][None, ...]) / 255
+            return x
 
-    #     else:
-    #         x = torch.FloatTensor(self.x[idx][None, ...]) / 255
+        else:
+            x = torch.FloatTensor(self.x[idx][None, ...]) / 255
 
-    #         y = torch.tensor(self.y[idx]).type(torch.int64)
-    #         y = F.one_hot(y, 10)
-    #         y = y.type(torch.float32)
+            y = torch.tensor(self.y[idx]).type(torch.int64)
+            y = F.one_hot(y, 10)
+            y = y.type(torch.float32)
 
-    #         return x, y
+            return x, y
 
-    # def __len__(self):
-    #     return len(self.x)
+    def __len__(self):
+        return len(self.x)
 
 model = CNN()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 criterion = torch.nn.CrossEntropyLoss()
 
-# pdb.set_trace()
 if not os.path.exists(pathlib.Path.cwd() / "tmp" / "experiment_summaries"):
         os.makedirs(pathlib.Path.cwd() / "tmp" / "experiment_summaries")
 
@@ -213,7 +203,7 @@ metric_deps = Dependency(pypi_dependencies=["numpy==1.23.1", "scikit-learn==1.1.
 
 
 def accuracy(datasamples, predictions_path):
-    config = datasamples
+    # config = datasamples
     y_true = datasamples["labels"]
     y_pred = np.load(predictions_path)
 
@@ -252,7 +242,7 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
 
     train_dataset = DatasetSpec(
         name="COVID LUS",
-        type="torchDataset",
+        type="npy",
         data_opener= scripts_directory / f"opener_train_{org_id}.py",
         description= scripts_directory / "description.md",
         permissions=permissions_dataset,
@@ -268,14 +258,14 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
     train_data_sample = DataSampleSpec(
         data_manager_keys=[train_dataset_key],
         test_only=False,
-        path=empty_path,
+        path= assets_directory / f"org_{i+1}" / "train",
     )
     train_datasample_keys[org_id] = client.add_data_sample(train_data_sample, local=True,)
 
     # Add the testing data on each organization.
     test_dataset = DatasetSpec(
         name="COVID LUS",
-        type="torchDataset",
+        type="npy",
         data_opener= scripts_directory / f"opener_test_{org_id}.py",
         description= scripts_directory / "description.md",
         permissions=permissions_dataset,
@@ -289,7 +279,7 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
     test_data_sample = DataSampleSpec(
         data_manager_keys=[test_dataset_key],
         test_only=True,
-        path=empty_path,
+        path=assets_directory / f"org_{i+1}" / "test",
     )
     test_datasample_keys[org_id] = client.add_data_sample(test_data_sample, local=True,)
 
@@ -303,6 +293,18 @@ strategy = FedAvg()
 aggregation_node = AggregationNode(ALGO_ORG_ID)
 
 train_data_nodes = list()
+
+class MyAlgo(TorchFedAvgAlgo):
+    def __init__(self):
+        super().__init__(
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
+            index_generator=index_generator,
+            dataset=TorchDataset,
+            seed=seed,
+            use_gpu=False,
+        )
 
 for org_id in DATA_PROVIDER_ORGS_ID:
     # pdb.set_trace()
@@ -334,6 +336,23 @@ my_eval_strategy = EvaluationStrategy(test_data_nodes=test_data_nodes, rounds=1)
 # the Python environment of each organization.
 algo_deps = Dependency(pypi_dependencies=["numpy==1.23.1", "torch==1.11.0"])
 
+def plot_results():
+    performances_df = pd.DataFrame(client.get_performances(compute_plan.key).dict())
+    print("\nPerformance Table: \n")
+    print(performances_df[["worker", "round_idx", "performance"]])
+
+    plt.title("Test dataset results")
+    plt.xlabel("Rounds")
+    plt.ylabel("Accuracy")
+
+    for id in DATA_PROVIDER_ORGS_ID:
+        df = performances_df.query(f"worker == '{id}'")
+        plt.plot(df["round_idx"], df["performance"], label=id)
+
+    plt.legend(loc="lower right")
+    plt.show()
+    plt.savefig('result.png')
+
 compute_plan = execute_experiment(
     client=clients[ALGO_ORG_ID],
     algo=MyAlgo(),
@@ -345,3 +364,5 @@ compute_plan = execute_experiment(
     experiment_folder=str(pathlib.Path.cwd() / "tmp" / "experiment_summaries"),
     dependencies=algo_deps,
 )
+
+plot_results()
