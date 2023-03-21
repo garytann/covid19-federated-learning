@@ -28,12 +28,14 @@ from substrafl.experiment import execute_experiment
 
 # Import the custom dataset class
 # import covidlus
-from covidLUS.dataset import CovidUltrasoundDataset
+from covidLUS.load_dataset import CovidUltrasoundDataset
 # from CNN import model, optimizer, criterion, seed
 # from torch_dataset import TorchDataset
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class CNN(nn.Module):
     def __init__(self):
@@ -64,7 +66,7 @@ class VGG(nn.Module):
     """
     def __init__(self):
         super().__init__()
-    
+        # Adaptive average pooling / max pooling
         self.features = nn.Sequential(
             # conv1
             nn.Conv2d(3, 64, 3, padding=1),
@@ -138,28 +140,133 @@ class TorchDataset(torch.utils.data.Dataset):
     def __init__(self, datasamples, is_inference: bool):
         self.x = datasamples["images"]
         self.y = datasamples["labels"]
+        # pdb.set_trace()
+        # self.y = torch.tensor(self.y)
+        # self.y_onehot = torch.zeros(self.y.shape[0],3)
         self.is_inference = is_inference
 
     def __getitem__(self, idx):
 
         if self.is_inference:
-            x = torch.FloatTensor(self.x[idx][None, ...]) / 255
+            x = (torch.FloatTensor(self.x[idx][None, ...]) / 255)
             return x
 
         else:
             x = torch.FloatTensor(self.x[idx][None, ...]) / 255
-
-            y = torch.tensor(self.y[idx]).type(torch.int64)
-            y = F.one_hot(y, 10)
+            y = torch.tensor(self.y[idx]).random_(0,2)
+            # y = torch.tensor(self.y[idx]).type(torch.int64)
+            # pdb.set_trace()
+            # x.to(device)
+            # y = F.one_hot(y, 10)
+            y = F.one_hot(y.to(torch.int64), 3)
             y = y.type(torch.float32)
-
+            # y.to(device)
             return x, y
 
     def __len__(self):
         return len(self.x)
 
-model = CNN()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# VGG16 model 
+class VGG16(nn.Module):
+    def __init__(self, num_classes=3):
+        super(VGG16, self).__init__()
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU())
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(), 
+            nn.MaxPool2d(kernel_size = 2, stride = 2))
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU())
+        self.layer4 = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size = 2, stride = 2))
+        self.layer5 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU())
+        self.layer6 = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU())
+        self.layer7 = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size = 2, stride = 2))
+        self.layer8 = nn.Sequential(
+            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU())
+        self.layer9 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU())
+        self.layer10 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size = 2, stride = 2))
+        self.layer11 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU())
+        self.layer12 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU())
+        self.layer13 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size = 2, stride = 2))
+        # self.adaptiveAvg = nn.Sequential(
+        #     nn.AdaptiveAvgPool2d((1,1))
+        # )
+        self.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(7*7*512, 4096),
+            nn.ReLU())
+        self.fc1 = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(4096, 4096),
+            nn.ReLU())
+        self.fc2= nn.Sequential(
+            nn.Linear(4096, num_classes))
+        
+    def forward(self, x):
+        if x.shape[1]== 1:
+            x = x.squeeze(1)
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        out = self.layer5(out)
+        out = self.layer6(out)
+        out = self.layer7(out)
+        out = self.layer8(out)
+        out = self.layer9(out)
+        out = self.layer10(out)
+        out = self.layer11(out)
+        out = self.layer12(out)
+        out = self.layer13(out)
+        out = out.reshape(out.size(0), -1)
+        out = self.fc(out)
+        out = self.fc1(out)
+        out = self.fc2(out)
+        return out
+
+# model = CNN().to(device=device)
+# model = VGG16(num_classes=3).to(device=device)
+model = VGG16(num_classes=3)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
 criterion = torch.nn.CrossEntropyLoss()
 
 if not os.path.exists(pathlib.Path.cwd() / "tmp" / "experiment_summaries"):
@@ -171,14 +278,14 @@ torch.manual_seed(seed)
 # Number of model updates between each FL strategy aggregation.
 NUM_UPDATES = 10
 # Number of samples per update.
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 # A round is defined by a local training step followed by an aggregation operation
 NUM_ROUNDS = 3
 
-client_0 = Client(backend_type="subprocess")
-client_1 = Client(backend_type="subprocess")
-client_2 = Client(backend_type="subprocess")
-client_3 = Client(backend_type="subprocess")
+client_0 = Client(backend_type="subprocess") # Algo provider
+client_1 = Client(backend_type="subprocess") # Data provider
+client_2 = Client(backend_type="subprocess") # Data provider
+client_3 = Client(backend_type="subprocess") # Data provider
 
 clients = {
     client_0.organization_info().organization_id: client_0,
@@ -248,6 +355,7 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
         permissions=permissions_dataset,
         logs_permission=permissions_dataset,
     )
+    # pdb.set_trace()
     # Add the dataset to the client to provide access to the opener in each organization.
     train_dataset_key = client.add_dataset(train_dataset)
     assert train_dataset_key, "Missing data manager key"
@@ -366,3 +474,5 @@ compute_plan = execute_experiment(
 )
 
 plot_results()
+
+print('federated training completed..')

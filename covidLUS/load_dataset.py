@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import os
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import pathlib 
@@ -9,6 +10,8 @@ import torchvision.transforms as transforms
 import numpy as np 
 from PIL import Image
 import pdb
+from torchvision.io import read_image, ImageReadMode
+
 
 class CovidUltrasoundDataset(Dataset):
     def __init__(self, 
@@ -32,20 +35,20 @@ class CovidUltrasoundDataset(Dataset):
         label = self.img_labels.iloc[idx, 1]
         img_path = os.path.join(self.img_dir, str(label) ,self.img_labels.iloc[idx, 0])
         image = Image.open(fp=img_path)
-        image_size = (28,28)
+        image_size = (224,224)
         image = image.resize(image_size)
-
         transform = transforms.Compose([
-                    transforms.Grayscale(),
+                    transforms.Grayscale(num_output_channels=3),
+                    # transforms.Resize(image_size),
                     transforms.ToTensor(),
-                    transforms.Lambda(lambda x: x[0]) # remove color channel
+                    # transforms.Lambda(lambda x: x[0]) # remove color channel
                 ])
         img = transform(image)
 
-        if self.transform:
-            img = self.transform(img)
-        if self.target_transform:
-            label = self.target_transform(label)
+        # if self.transform:
+        #     img = self.transform(img)
+        # if self.target_transform:
+        #     label = self.target_transform(label)
         return img, label
 
 # if __name__ == "__main__":
@@ -55,7 +58,6 @@ for i in range(3):
     test_image_data_path = pathlib.Path(data_path) / f"test_dataset_{i+1}"
     train_label_path = pathlib.Path(data_path) / f"train_annotation_{i+1}.csv"
     test_label_path = pathlib.Path(data_path) / f"test_annotation_{i+1}.csv"
-
     # Load the train dataset 
     train_covid_dataset = CovidUltrasoundDataset(
                                     annotations_file=train_label_path,
@@ -72,8 +74,9 @@ for i in range(3):
     # Iterate through the data loader and convert the features and labels to numpy 
     train_features, train_labels = next(iter(train_dataloader))
     train_dataset_numpy = train_features.numpy()
-    train_labels_numpy = train_labels.numpy()
-    
+    train_labels_numpy = (train_labels-1).numpy()
+    # (660, 224, 224) shape of the image
+    train_labels_numpy = train_labels_numpy.astype(np.uint8)
     # import pdb
     # pdb.set_trace()
     # img = train_features[0]
@@ -122,6 +125,8 @@ for i in range(3):
     np.save(str(filename), test_dataset_numpy)
     filename = data_path / f"org_{i+1}/test/test_labels.npy"
     np.save(str(filename), test_labels_numpy)
+
+print('dataset loaded successfully')
 
     # # # Display image and label
     # train_features, train_labels = next(iter(train_dataloader))

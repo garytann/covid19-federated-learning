@@ -1,1 +1,1 @@
-from .dataset import CovidUltrasoundDataset
+from .load_dataset import CovidUltrasoundDataset
