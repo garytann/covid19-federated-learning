@@ -39,8 +39,12 @@ class CovidUltrasoundDataset(Dataset):
         image = image.resize(image_size)
         transform = transforms.Compose([
                     transforms.Grayscale(num_output_channels=3),
-                    # transforms.Resize(image_size),
+                    transforms.Resize(image_size),
+                    transforms.RandomHorizontalFlip(),
                     transforms.ToTensor(),
+                    # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.1),
+                    # transforms.RandomAffine(degrees=40, translate=None, scale=(1, 2), shear=15, interpolation=False, fill=0),
+                    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
                     # transforms.Lambda(lambda x: x[0]) # remove color channel
                 ])
         img = transform(image)
@@ -82,16 +86,17 @@ for i in range(3):
     # img = train_features[0]
 
     # # Rotating the channels of the image
-    # # img = img.swapaxes(0,1)
-    # # img = img.swapaxes(1,2)
-    # label = train_labels[0]
+    # img = img.swapaxes(0,1)
+    # img = img.swapaxes(1,2)
+    # # label = train_labels[0]
 
     # # Showing a sample of the train features 
     # plt.imshow(img.squeeze())
     # # plt.show()
-    # plt.savefig('test.png')
-    # print(f"Label: {label}")
+    # plt.savefig('img_sample.png')
+    # # print(f"Label: {label}")
 
+    # pdb.set_trace()
     # Save the numpy to a directory 
     os.makedirs(str(data_path / f"org_{i+1}/train"), exist_ok=True)
     filename = data_path / f"org_{i+1}/train/train_images.npy"

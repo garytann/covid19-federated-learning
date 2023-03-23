@@ -8,6 +8,7 @@ import torchvision
 from typing import OrderedDict
 import pandas as pd
 import matplotlib.pyplot as plt
+import torchvision.models as models
 
 from substra import Client
 from substra.sdk.schemas import DatasetSpec
@@ -19,7 +20,7 @@ from substrafl.remote.register import add_metric
 from sklearn.metrics import accuracy_score
 from substrafl.index_generator import NpIndexGenerator
 from substrafl.algorithms.pytorch import TorchFedAvgAlgo
-from substrafl.strategies import FedAvg
+from substrafl.strategies import FedAvg, SingleOrganization
 from substrafl.nodes import TrainDataNode
 from substrafl.nodes import AggregationNode
 from substrafl.nodes import TestDataNode
@@ -153,7 +154,8 @@ class TorchDataset(torch.utils.data.Dataset):
 
         else:
             x = torch.FloatTensor(self.x[idx][None, ...]) / 255
-            y = torch.tensor(self.y[idx]).random_(0,2)
+            # y = torch.tensor(self.y[idx]).random_(0,2)
+            y = torch.tensor(self.y[idx])
             # y = torch.tensor(self.y[idx]).type(torch.int64)
             # pdb.set_trace()
             # x.to(device)
@@ -227,9 +229,6 @@ class VGG16(nn.Module):
             nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size = 2, stride = 2))
-        # self.adaptiveAvg = nn.Sequential(
-        #     nn.AdaptiveAvgPool2d((1,1))
-        # )
         self.fc = nn.Sequential(
             nn.Dropout(0.5),
             nn.Linear(7*7*512, 4096),
@@ -244,6 +243,7 @@ class VGG16(nn.Module):
     def forward(self, x):
         if x.shape[1]== 1:
             x = x.squeeze(1)
+        pdb.set_trace()
         out = self.layer1(x)
         out = self.layer2(out)
         out = self.layer3(out)
@@ -263,10 +263,17 @@ class VGG16(nn.Module):
         out = self.fc2(out)
         return out
 
+
 # model = CNN().to(device=device)
 # model = VGG16(num_classes=3).to(device=device)
-model = VGG16(num_classes=3)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
+# model = VGG16(num_classes=3)
+model = VGG16(3)
+# model = models.vgg16(pretrained=True)
+# pdb.set_trace()
+# num_features  = model.classifier[0].in_features
+# model.classifier[0] = torch.nn.Linear(num_features, 3)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 criterion = torch.nn.CrossEntropyLoss()
 
 if not os.path.exists(pathlib.Path.cwd() / "tmp" / "experiment_summaries"):
@@ -396,7 +403,8 @@ index_generator = NpIndexGenerator(
     num_updates=NUM_UPDATES, 
 )
 
-strategy = FedAvg()
+# strategy = FedAvg()
+strategy = SingleOrganization()
 
 aggregation_node = AggregationNode(ALGO_ORG_ID)
 
