@@ -11,8 +11,11 @@ import torch.optim as optim # optimzer
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 from sklearn import metrics
-from torchvision import models
-
+import torchvision.models as models
+import matplotlib.pyplot as plt
+import numpy as np 
+import pandas as pd
+from sklearn.preprocessing import LabelBinarizer
 
 import pathlib 
 from covidLUS.load_dataset import CovidUltrasoundDataset
@@ -111,6 +114,7 @@ class VGG16(nn.Module):
         out = self.fc2(out)
         return out
 
+# data path variables 
 data_path = pathlib.Path.cwd() / "data"
 train_image_data_path = pathlib.Path(data_path) / f"train_dataset"
 test_image_data_path = pathlib.Path(data_path) / f"test_dataset"
@@ -132,19 +136,28 @@ test_label_path = pathlib.Path(data_path) / f"test_annotation.csv"
 #                 ])
 
 # set batch_size
-batch_size = 8
+batch_size = 16
 
 # set number of workers
 num_workers = 2
 
 if __name__ == "__main__":
     
+    # set device to cuda else cpu 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    # pdb.set_trace()
+    train_img_labels = pd.read_csv(train_label_path)
+    train_label = train_img_labels['label']
+    test_img_labels = pd.read_csv(test_label_path)
+    test_label = test_img_labels['label']
+
+    lb = LabelBinarizer()
+    train_labels = lb.fit(train_label)
+    test_labels = lb.fit(test_label)
     # load train data
     train_covid_dataset = CovidUltrasoundDataset(
                                         annotations_file=train_label_path,
                                         img_dir=train_image_data_path,
+                                        label = train_label
                                         )
     # print(f'len of train set of org_{i+1}: {len(train_covid_dataset)}')
     print(f'len of train set: {len(train_covid_dataset)}')
@@ -160,7 +173,8 @@ if __name__ == "__main__":
     # load test data 
     test_covid_dataset = CovidUltrasoundDataset(
                                             annotations_file=test_label_path,
-                                            img_dir=test_image_data_path
+                                            img_dir=test_image_data_path,
+                                            label = test_label
                                             )
     # print(f'len of test set of org_{i+1}: {len(test_covid_dataset)}')
     print(f'len of test set: {len(test_covid_dataset)}')
@@ -173,79 +187,203 @@ if __name__ == "__main__":
                         )
     # iter the train dataset
     train_features, train_labels = next(iter(train_dataloader))
-
+    pdb.set_trace()
 #     model = VGG16(3).to(device)
+    # model = models.vgg16(pretrained=True)
     model = models.vgg16(pretrained=True)
     
-    print(f"********* Model Parameter *********")
-    print(model)
-    
-    for param in model.parameters():
+    for param in model.features.parameters():
         param.requires_grad = False
     
-    model.fc = nn.Sequential(nn.Linear(2048, 512),
-                                 nn.ReLU(),
-                                 nn.Dropout(0.2),
-                                 nn.Linear(512, 10),
-                                 nn.LogSoftmax(dim=1))
+    num_classes = 3
+
+    model.classifier[-1] = nn.Linear(in_features=4096, out_features=num_classes, bias=True)
+
+    print(f"********* Model Parameter *********")
+    print(model)    
+
+
+    # model.classifier = nn.Sequential(
+    #         nn.Conv2d(512, 256, kernel_size=3, padding=1),
+    #         nn.ReLU(inplace=True),
+    #         nn.Conv2d(256, 128, kernel_size=3, padding=1),
+    #         nn.ReLU(inplace=True),
+    #         nn.Conv2d(128, 64, kernel_size=3, padding=1),
+    #         nn.ReLU(inplace=True),
+    #         nn.Conv2d(64, 3, kernel_size=1),
+    #         nn.ReLU(inplace=True),
+    #         nn.AdaptiveAvgPool2d((1,1))
+    #     )
+
+    # model.fc = nn.Sequential(nn.Linear(2048, 512),
+    #                              nn.ReLU(),
+    #                              nn.Dropout(0.2),
+    #                              nn.Linear(512, num_classes),
+    #                              nn.LogSoftmax(dim=1))
     
     criterion = nn.CrossEntropyLoss()
     # optimizer = optim.Adam(model.parameters(), lr=0.001, momentum=0.9)
 #     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
 
+    # place the network into gpu
     model.to(device)
-    # pdb.set_trace()
+    torch.backends.cudnn.benchmark = True
 
-    start = torch.cuda.Event(enable_timing=True)
+    start = torch.cuda.Event(enable_timing=True)     
     end = torch.cuda.Event(enable_timing=True)
     
-    epochs = 1
-    running_loss = 0.0
-    train_losses, test_losses = [],[]
+    epochs = 3
+
+    train_losses, test_losses, epoch_arr = [],[],[]
+    train_accuracy_arr = []
     print_every = 100
+    train_correct = 0 
+    train_total = 0 
     steps = 0
     
     start.record()
     
+    # setting fine tuned parameters
+    # params_to_update_1 = []
+    # params_to_update_2 = []
+    # params_to_update_3 = []
+
+    # Not only output layer, "features" layers and other classifier layers are tuned.
+    # update_param_names_1 = ["features"]
+    # update_param_names_2 = ["classifier.0.weight",
+    #                         "classifier.0.bias", "classifier.3.weight", "classifier.3.bias"]
+    # update_param_names_3 = ["classifier.6.weight", "classifier.6.bias"]
+
+    # # store parameters in list
+    # for name, param in model.named_parameters():
+    #     if update_param_names_1[0] in name:
+    #         param.requires_grad = True
+    #         params_to_update_1.append(param)
+    #         #print("params_to_update_1:", name)
+
+    #     elif name in update_param_names_2:
+    #         param.requires_grad = True
+    #         params_to_update_2.append(param)
+    #         #print("params_to_update_2:", name)
+
+    #     elif name in update_param_names_3:
+    #         param.requires_grad = True
+    #         params_to_update_3.append(param)
+    #         #print("params_to_update_3:", name)
+
+    #     else:
+    #         param.requires_grad = False
+            #print("no learning", name)
+    learning_rate = 1e-4
+    optimizer = optim.Adam(model.parameters(), 
+                           lr=learning_rate,
+                           decay=learning_rate /epochs
+                           )
+
+    # Learning Rates
+    # optimizer = optim.Adam([
+    #     {'params': params_to_update_1, 'lr': 1e-4},
+    #     {'params': params_to_update_2, 'lr': 5e-4},
+    #     {'params': params_to_update_3, 'lr': 1e-3}
+    #     ]
+    # )
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
+                                                mode='min',
+                                                factor=0.7, 
+                                                patience=7, 
+                                                # threshold=0.0001, 
+                                                # threshold_mode='abs',
+                                                eps=1e-4,
+                                                verbose=True
+                                            )
+
+    
+    # training loop
+    model.train()
     for epoch in range(epochs):  # loop over the dataset multiple times
+        running_loss = 0.0
 #         print(f'training iter {epoch}')
         for i, (inputs, labels) in enumerate(train_dataloader, 0):
             # get the inputs; data is a list of [inputs, labels]
-            # inputs, labels = data
+            
+            # move the inputs and labels tensor to cuda
             inputs, labels = inputs.cuda(), labels.cuda()
+
             # zero the parameter gradients
             optimizer.zero_grad()
-            # forward + backward + optimize
+            
+            # forward pass
             outputs = model(inputs)
-#             outputs = model.forward(inputs)
+            # outputs = model.forward(inputs)
             loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
 
-            # print statistics
+            # backward propagate
+            # loss.backward()
+            scheduler.step(loss)
+
+            # Accumulate the losses
+            # running_loss += loss.item()
             running_loss += loss.item()
-            
-            if steps % print_every == 0:
-                test_loss = 0
-                accuracy = 0
-                model.eval()
-                train_losses.append(running_loss/len(train_dataloader))
-                print(f"Epoch {epoch+1}/{epochs}.. "
-                   f"Train loss: {running_loss/print_every:.3f}.. ")
-                running_loss = 0.0
-                model.train()
+
+            # Compute predictions and accuracy
+            # _, predicted = torch.max(outputs.data, 1)
+            _, predicted = torch.max(outputs.data, 1)
+            train_total += labels.size(0)
+            train_correct += (predicted == labels).sum().item()
+            # train_correct += torch.sum(predicted == labels.data).sum().cpu().numpy()
+            # if steps % print_every == 0 :
+            #     model.eval()
+            #     train_losses.append(running_loss/len(train_dataloader))
+            #     print(f"Epoch {epoch+1}/{epochs}.. "
+            #        f"Train loss: {running_loss/print_every:.3f}.. ")
+            #     running_loss = 0.0
+            #     model.train()
                 
-                 
-#                       f"Test loss: {test_loss/len(test_dataloader):.3f}.. "
-#                       f"Test accuracy: {accuracy/len(test_dataloader):.3f}")
-                  
-                
-            
-#             if i % 100 == 99:    # print every 2000 mini-batches
-#                 print('[%d, %5d] loss: %.3f' %
-#                     (epoch + 1, i + 1, running_loss / 100))
-#                 running_loss = 0.0
+            # if i % 100 == 99:    # print every 2000 mini-batches
+            #     print('[%d, %5d] loss: %.3f' %
+            #         (epoch + 1, i + 1, running_loss / 100))
+            #     print(f"Epoch {epoch+1}/{epochs}, Training Loss: {running_loss:.5f}")
+            #     running_loss = 0.0
+        
+        running_loss /= (len(train_dataloader.dataset) * 100)
+        train_losses.append(running_loss)
+        print(f"Epoch {epoch+1}/{epochs}, Training Loss: {running_loss:.4f}")
+        
+        train_accuracy = 100 * train_correct / train_total
+        train_accuracy = train_correct/len(train_dataloader.dataset)
+        print(f"training accuracy: {train_accuracy:.4f}")
+        train_accuracy_arr.append(train_accuracy)
+
+        epoch_arr.append(epoch)
+
+
+    # train_accuracy = 100 * train_correct / train_total
+    # train_accuracy_arr.append(train_accuracy)
+
+    # Plot training loss
+    plt.style.use('ggplot')
+    plt.figure()
+    plt.plot(np.arange(0, len(train_losses)), train_losses, label='train_loss')
+
+    # plt.plot(epoch_arr, train_losses, label = 'Train Loss')
+    # plt.plot(epoch_arr, train_accuracy_arr, label='Train Accuracy')
+    plt.title('Training Loss on COVID-19 Dataset')
+    plt.xlabel('Epoch #')
+    plt.ylabel('Loss')
+    plt.legend(loc='lower left')
+    plt.savefig('training_loss.png')
+
+    plt.style.use('ggplot')
+    plt.figure()
+    plt.plot(np.arange(0, len(train_accuracy_arr)), train_accuracy_arr, label='train_loss')
+    # plt.plot(epoch_arr, train_losses, label = 'Train Loss')
+    # plt.plot(epoch_arr, train_accuracy_arr, label='Train Accuracy')
+    plt.title('Training Accuracy on COVID-19 Dataset')
+    plt.xlabel('Epoch #')
+    plt.ylabel('Accuracy')
+    plt.legend(loc='lower left')
+    plt.savefig('training_accuracy.png')
+    
     end.record()
 
     # Waits for everything to finish running
@@ -256,28 +394,50 @@ if __name__ == "__main__":
 
     correct = 0
     total = 0
-    
-    test_loss = 0 
-    accuracy = 0
-    
+    predicted_labels = []
+    true_labels = []
+    # test_loss = 0 
+    # accuracy = 0
+
+    # testing loop
+    model.eval()
     with torch.no_grad():
         for (inputs, labels) in test_dataloader:
-            # pdb.set_trace()
+            
             images, labels = inputs.cuda(), labels.cuda()
             outputs = model(images)
-#             outputs = model.forward(images)
-            batch_loss = criterion(outputs, labels)
+            # outputs = model.forward(images)
+            
+            # batch_loss = criterion(outputs, labels)
+            # ps = torch.exp(outputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            test_loss += batch_loss.item()
-            accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
-            test_losses.append(test_loss/len(test_dataloader))
-            print(f"Test loss: {test_loss/len(test_dataloader):.3f}.."
-                  f"Test accuracy: {accuracy/len(test_dataloader):.3f}")
+            # correct += (predicted == labels).sum().item()
+            correct += torch.sum(predicted == labels.data)
+            predicted_labels.extend(predicted.cpu().numpy())
+            true_labels.extend(labels.cpu().numpy())
+            # top_p, top_class = ps.topk(1, dim=1)
+            # equals = top_class == labels.view(*top_class.shape)
+            # test_loss += batch_loss.item()
+            # accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
+            # test_losses.append(test_loss/len(test_dataloader))
+            # print(f"Test loss: {test_loss/len(test_dataloader):.3f}.."
+            #       f"Test accuracy: {accuracy/len(test_dataloader):.3f}")
     # Accuracy = metrics.accuracy_score(total, correct)
 
     # print(f'what is accuracy: {Accuracy}')
 
     print('Accuracy of the network on the 523 test images: %d %%' % (
         100 * correct / total))
+
+    target_names = ['0', '1', '2'] # Add your own class names
+
+    # Compute precision, recall, and f1-score
+    # precision = metrics.precision_score(true_labels, predicted_labels, average='weighted')
+    # recall = metrics.recall_score(true_labels, predicted_labels, average='weighted')
+    # f1 = metrics.f1_score(true_labels, predicted_labels, average='weighted')
+
+    # print(f'Precision: {precision:.4f}, Recall: {recall:.4f}, F1-score: {f1:.4f}')
+    report = metrics.classification_report(true_labels, predicted_labels, target_names=target_names)
+
+    print(report)
