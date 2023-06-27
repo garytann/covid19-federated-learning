@@ -133,3 +133,7 @@ data
 tmp
 local-worker
 *.png
+
+# ignore all the opener files
+opener_*
+
