@@ -29,7 +29,7 @@ from substrafl.experiment import execute_experiment
 
 # Import the custom dataset class
 # import covidlus
-from covidLUS.load_dataset import CovidUltrasoundDataset
+# from covidLUS.load_dataset import CovidUltrasoundDataset
 # from CNN import model, optimizer, criterion, seed
 # from torch_dataset import TorchDataset
 import torch
@@ -37,105 +37,14 @@ from torch import nn
 import torch.nn.functional as F
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# Construct the argument parser and parse the arguments
+ap = argparse.ArgumentParser()
+ap.add_argument(
+    '-n', '--num_client', type=int, default=3
+)
+args = vars(ap.parse_args())
 
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=5)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=5)
-        self.fc1 = nn.Linear(3 * 3 * 64, 256)
-        self.fc2 = nn.Linear(256, 10)
-
-    def forward(self, x, eval=False):
-        # pdb.set_trace()
-        x = F.relu(self.conv1(x))
-        x = F.relu(F.max_pool2d(self.conv2(x), 2))
-        x = F.dropout(x, p=0.5, training=not eval)
-        x = F.relu(F.max_pool2d(self.conv3(x), 2))
-        x = F.dropout(x, p=0.5, training=not eval)
-        x = x.view(-1, 3 * 3 * 64)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, p=0.5, training=not eval)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
-
-class VGG(nn.Module):
-
-    """
-    Standard PyTorch implementation of VGG. Pretrained imagenet model is used.
-    """
-    def __init__(self):
-        super().__init__()
-        # Adaptive average pooling / max pooling
-        self.features = nn.Sequential(
-            # conv1
-            nn.Conv2d(3, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2, return_indices=True),
-            
-            # conv2
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2, return_indices=True),
-
-            # conv3
-            nn.Conv2d(128, 256, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2, return_indices=True),
-
-            # conv4
-            nn.Conv2d(256, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2, return_indices=True),
-
-            # conv5
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2, return_indices=True)
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(),
-            nn.Dropout(),
-            nn.Linear(4096, 1000)
-        )
-
-        # We need these for MaxUnpool operation
-        self.conv_layer_indices = [0, 2, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 28]
-        self.feature_maps = OrderedDict()
-        self.pool_locs = OrderedDict()
-        
-    def forward(self, x):
-        for layer in self.features:
-            if isinstance(layer, nn.MaxPool2d):
-                x, location = layer(x)
-            else:
-                x = layer(x)
-        
-        x = x.view(x.size()[0], -1)
-        x = self.classifier(x)
-        return x
+NUM_CLIENTS = args['num_client']
 
 class TorchDataset(torch.utils.data.Dataset):
     def __init__(self, datasamples, is_inference: bool):
@@ -168,110 +77,32 @@ class TorchDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.x)
 
-# VGG16 model 
+# VGG16 model
 class VGG16(nn.Module):
     def __init__(self, num_classes=3):
         super(VGG16, self).__init__()
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU())
-        self.layer2 = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(), 
-            nn.MaxPool2d(kernel_size = 2, stride = 2))
-        self.layer3 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU())
-        self.layer4 = nn.Sequential(
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size = 2, stride = 2))
-        self.layer5 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU())
-        self.layer6 = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU())
-        self.layer7 = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size = 2, stride = 2))
-        self.layer8 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU())
-        self.layer9 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU())
-        self.layer10 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size = 2, stride = 2))
-        self.layer11 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU())
-        self.layer12 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU())
-        self.layer13 = nn.Sequential(
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size = 2, stride = 2))
-        self.fc = nn.Sequential(
+        self.features = models.vgg16(weights = "IMAGENET1K_V1").features  # Load pre-trained VGG16 features
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))  # Adaptive average pooling layer
+        self.classifier = nn.Sequential(
             nn.Dropout(0.5),
-            nn.Linear(7*7*512, 4096),
-            nn.ReLU())
-        self.fc1 = nn.Sequential(
+            nn.Linear(7 * 7 * 512, 4096),
+            nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(4096, 4096),
-            nn.ReLU())
-        self.fc2= nn.Sequential(
-            nn.Linear(4096, num_classes))
-        
+            nn.ReLU(),
+            nn.Linear(4096, num_classes)
+        )
+
     def forward(self, x):
-        if x.shape[1]== 1:
+        if x.shape[1] == 1:
             x = x.squeeze(1)
-        pdb.set_trace()
-        out = self.layer1(x)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.layer5(out)
-        out = self.layer6(out)
-        out = self.layer7(out)
-        out = self.layer8(out)
-        out = self.layer9(out)
-        out = self.layer10(out)
-        out = self.layer11(out)
-        out = self.layer12(out)
-        out = self.layer13(out)
-        out = out.reshape(out.size(0), -1)
-        out = self.fc(out)
-        out = self.fc1(out)
-        out = self.fc2(out)
+        out = self.features(x)
+        out = self.avgpool(out)
+        out = torch.flatten(out, 1)
+        out = self.classifier(out)
         return out
 
-
-# model = CNN().to(device=device)
-# model = VGG16(num_classes=3).to(device=device)
-# model = VGG16(num_classes=3)
-model = VGG16(3)
-# model = models.vgg16(pretrained=True)
-# pdb.set_trace()
-# num_features  = model.classifier[0].in_features
-# model.classifier[0] = torch.nn.Linear(num_features, 3)
+model = VGG16()
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 criterion = torch.nn.CrossEntropyLoss()
@@ -279,7 +110,7 @@ criterion = torch.nn.CrossEntropyLoss()
 if not os.path.exists(pathlib.Path.cwd() / "tmp" / "experiment_summaries"):
         os.makedirs(pathlib.Path.cwd() / "tmp" / "experiment_summaries")
 
-N_CLIENTS = 3
+N_CLIENTS = NUM_CLIENTS
 seed = 42
 torch.manual_seed(seed)
 # Number of model updates between each FL strategy aggregation.
@@ -289,17 +120,53 @@ BATCH_SIZE = 16
 # A round is defined by a local training step followed by an aggregation operation
 NUM_ROUNDS = 3
 
-client_0 = Client(backend_type="subprocess") # Algo provider
-client_1 = Client(backend_type="subprocess") # Data provider
-client_2 = Client(backend_type="subprocess") # Data provider
-client_3 = Client(backend_type="subprocess") # Data provider
+# client_0 = Client(backend_type="subprocess") # Algo provider
+# client_1 = Client(backend_type="subprocess") # Data provider
+# client_2 = Client(backend_type="subprocess") # Data provider
+# client_3 = Client(backend_type="subprocess") # Data provider
 
-clients = {
-    client_0.organization_info().organization_id: client_0,
-    client_1.organization_info().organization_id: client_1,
-    client_2.organization_info().organization_id: client_2,
-    client_3.organization_info().organization_id: client_3,
-}
+# clients = {
+#     client_0.organization_info().organization_id: client_0,
+#     client_1.organization_info().organization_id: client_1,
+#     client_2.organization_info().organization_id: client_2,
+#     client_3.organization_info().organization_id: client_3,
+# }
+
+clients = {}
+for num in range(NUM_CLIENTS + 1):
+    client = Client(backend_type="subprocess")  # Data provider
+    clients[client.organization_info().organization_id] = client
+    ORGS_ID = list(clients.keys())
+    script = f'''
+import substratools as tools
+import pathlib
+import numpy as np
+class CovidLUSTrainOpener(tools.Opener):
+    def get_data(self, folders):
+        p = pathlib.Path(folders[0])
+        images_data_path = p / list(p.glob("*_images.npy"))[0]
+        labels_data_path = p / list(p.glob("*_labels.npy"))[0]
+
+        # load data
+        data = {{
+            "images": np.load(images_data_path),
+            "labels": np.load(labels_data_path),
+        }}
+
+        return data
+
+    def fake_data(self, n_samples=None):
+        pass
+
+'''
+    # Save the generated script as a Python file
+    script_test = f'opener_test_{ORGS_ID[-1]}.py'
+    script_train = f'opener_train_{ORGS_ID[-1]}.py'
+    with open(script_test, 'w') as f:
+        f.write(script)
+    with open(script_train, 'w') as f:
+        f.write(script)
+
 
 # Store organization IDs
 ORGS_ID = list(clients.keys())
@@ -332,7 +199,7 @@ metric_key = add_metric(
 )
 
 # Directory to the data assets
-assets_directory = pathlib.Path.cwd() / "data"
+assets_directory = pathlib.Path.cwd() / "data" / "fl_dataset"
 scripts_directory = pathlib.Path.cwd()
 empty_path = assets_directory / "empty_datasamples"
 
@@ -373,7 +240,7 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
     train_data_sample = DataSampleSpec(
         data_manager_keys=[train_dataset_key],
         test_only=False,
-        path= assets_directory / f"org_{i+1}" / "train",
+        path= assets_directory / f"client_org_{i+1}" / "train",
     )
     train_datasample_keys[org_id] = client.add_data_sample(train_data_sample, local=True,)
 
@@ -394,7 +261,7 @@ for i, org_id in enumerate(DATA_PROVIDER_ORGS_ID):
     test_data_sample = DataSampleSpec(
         data_manager_keys=[test_dataset_key],
         test_only=True,
-        path=assets_directory / f"org_{i+1}" / "test",
+        path=assets_directory / f"client_org_{i+1}" / "test",
     )
     test_datasample_keys[org_id] = client.add_data_sample(test_data_sample, local=True,)
 
@@ -403,8 +270,8 @@ index_generator = NpIndexGenerator(
     num_updates=NUM_UPDATES, 
 )
 
-# strategy = FedAvg()
-strategy = SingleOrganization()
+strategy = FedAvg()
+# strategy = SingleOrganization()
 
 aggregation_node = AggregationNode(ALGO_ORG_ID)
 

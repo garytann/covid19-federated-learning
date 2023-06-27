@@ -56,82 +56,82 @@ class CovidUltrasoundDataset(Dataset):
         return img, label
 
 # if __name__ == "__main__":
-for i in range(3):
-    data_path = pathlib.Path.cwd() / "data"
-    train_image_data_path = pathlib.Path(data_path) / f"train_dataset_{i+1}"
-    test_image_data_path = pathlib.Path(data_path) / f"test_dataset_{i+1}"
-    train_label_path = pathlib.Path(data_path) / f"train_annotation_{i+1}.csv"
-    test_label_path = pathlib.Path(data_path) / f"test_annotation_{i+1}.csv"
-    # Load the train dataset 
-    train_covid_dataset = CovidUltrasoundDataset(
-                                    annotations_file=train_label_path,
-                                    img_dir=train_image_data_path,
-                                    )
-    print(f'len of train set of org_{i+1}: {len(train_covid_dataset)}')
+# for i in range(3):
+#     data_path = pathlib.Path.cwd() / "data"
+#     train_image_data_path = pathlib.Path(data_path) / f"train_dataset_{i+1}"
+#     test_image_data_path = pathlib.Path(data_path) / f"test_dataset_{i+1}"
+#     train_label_path = pathlib.Path(data_path) / f"train_annotation_{i+1}.csv"
+#     test_label_path = pathlib.Path(data_path) / f"test_annotation_{i+1}.csv"
+#     # Load the train dataset 
+#     train_covid_dataset = CovidUltrasoundDataset(
+#                                     annotations_file=train_label_path,
+#                                     img_dir=train_image_data_path,
+#                                     )
+#     print(f'len of train set of org_{i+1}: {len(train_covid_dataset)}')
 
-    train_dataloader = DataLoader(
-                            train_covid_dataset, 
-                            batch_size=len(train_covid_dataset), 
-                            shuffle=True
-                            )
+#     train_dataloader = DataLoader(
+#                             train_covid_dataset, 
+#                             batch_size=len(train_covid_dataset), 
+#                             shuffle=True
+#                             )
 
-    # Iterate through the data loader and convert the features and labels to numpy 
-    train_features, train_labels = next(iter(train_dataloader))
-    train_dataset_numpy = train_features.numpy()
-    train_labels_numpy = (train_labels-1).numpy()
-    # (660, 224, 224) shape of the image
-    train_labels_numpy = train_labels_numpy.astype(np.uint8)
-    # import pdb
-    # pdb.set_trace()
-    # img = train_features[0]
+#     # Iterate through the data loader and convert the features and labels to numpy 
+#     train_features, train_labels = next(iter(train_dataloader))
+#     train_dataset_numpy = train_features.numpy()
+#     train_labels_numpy = (train_labels-1).numpy()
+#     # (660, 224, 224) shape of the image
+#     train_labels_numpy = train_labels_numpy.astype(np.uint8)
+#     # import pdb
+#     # pdb.set_trace()
+#     # img = train_features[0]
 
-    # # Rotating the channels of the image
-    # img = img.swapaxes(0,1)
-    # img = img.swapaxes(1,2)
-    # # label = train_labels[0]
+#     # # Rotating the channels of the image
+#     # img = img.swapaxes(0,1)
+#     # img = img.swapaxes(1,2)
+#     # # label = train_labels[0]
 
-    # # Showing a sample of the train features 
-    # plt.imshow(img.squeeze())
-    # # plt.show()
-    # plt.savefig('img_sample.png')
-    # # print(f"Label: {label}")
+#     # # Showing a sample of the train features 
+#     # plt.imshow(img.squeeze())
+#     # # plt.show()
+#     # plt.savefig('img_sample.png')
+#     # # print(f"Label: {label}")
 
-    # pdb.set_trace()
-    # Save the numpy to a directory 
-    os.makedirs(str(data_path / f"org_{i+1}/train"), exist_ok=True)
-    filename = data_path / f"org_{i+1}/train/train_images.npy"
-    np.save(str(filename), train_dataset_numpy)
-    filename = data_path / f"org_{i+1}/train/train_labels.npy"
-    np.save(str(filename), train_labels_numpy)
+#     # pdb.set_trace()
+#     # Save the numpy to a directory 
+#     os.makedirs(str(data_path / f"org_{i+1}/train"), exist_ok=True)
+#     filename = data_path / f"org_{i+1}/train/train_images.npy"
+#     np.save(str(filename), train_dataset_numpy)
+#     filename = data_path / f"org_{i+1}/train/train_labels.npy"
+#     np.save(str(filename), train_labels_numpy)
     
-    # Load the test dataset 
-    test_covid_dataset = CovidUltrasoundDataset(
-                                        annotations_file=test_label_path,
-                                        img_dir=test_image_data_path
-                                        )
-    print(f'len of test set of org_{i+1}: {len(test_covid_dataset)}')
+#     # Load the test dataset 
+#     test_covid_dataset = CovidUltrasoundDataset(
+#                                         annotations_file=test_label_path,
+#                                         img_dir=test_image_data_path
+#                                         )
+#     print(f'len of test set of org_{i+1}: {len(test_covid_dataset)}')
    
-    test_dataloader = DataLoader(
-                        test_covid_dataset, 
-                        batch_size=len(test_covid_dataset), 
-                        shuffle=True
-                    )
+#     test_dataloader = DataLoader(
+#                         test_covid_dataset, 
+#                         batch_size=len(test_covid_dataset), 
+#                         shuffle=True
+#                     )
     
-    # Iterate through the data loader and convert the features and labels to numpy 
-    test_features, test_labels = next(iter(test_dataloader))
-    test_dataset_numpy = test_features.numpy()
-    test_labels_numpy = test_labels.numpy()
+#     # Iterate through the data loader and convert the features and labels to numpy 
+#     test_features, test_labels = next(iter(test_dataloader))
+#     test_dataset_numpy = test_features.numpy()
+#     test_labels_numpy = test_labels.numpy()
 
-    # pdb.set_trace()
+#     # pdb.set_trace()
 
-    # Save the numpy to directory 
-    os.makedirs(str(data_path / f"org_{i+1}/test"), exist_ok=True)
-    filename = data_path / f"org_{i+1}/test/test_images.npy"
-    np.save(str(filename), test_dataset_numpy)
-    filename = data_path / f"org_{i+1}/test/test_labels.npy"
-    np.save(str(filename), test_labels_numpy)
+#     # Save the numpy to directory 
+#     os.makedirs(str(data_path / f"org_{i+1}/test"), exist_ok=True)
+#     filename = data_path / f"org_{i+1}/test/test_images.npy"
+#     np.save(str(filename), test_dataset_numpy)
+#     filename = data_path / f"org_{i+1}/test/test_labels.npy"
+#     np.save(str(filename), test_labels_numpy)
 
-print('dataset loaded successfully')
+# print('dataset loaded successfully')
 
     # # # Display image and label
     # train_features, train_labels = next(iter(train_dataloader))
