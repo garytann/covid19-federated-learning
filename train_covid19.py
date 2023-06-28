@@ -22,12 +22,11 @@ import pathlib
 from covidLUS.load_dataset import CovidUltrasoundDataset
 from torchsummary import summary
 
-vgg16_config = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M']
 
-def set_parameter_requires_grad(model, feature_extracting):
-    if feature_extracting:
-        for param in model.parameters():
-            param.requires_grad = False
+# def set_parameter_requires_grad(model, feature_extracting):
+#     if feature_extracting:
+#         for param in model.parameters():
+#             param.requires_grad = False
 
 
 def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
@@ -45,8 +44,7 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
     true_labels = []
     total = 0
     correct = 0 
-    # label_encoder = LabelEncoder()
-    # early_stopper = EarlyStopper(patience=20, min_delta=10)
+    softmax_probs = []
 
     for epoch in range(epochs):
         print(f'Epoch {epoch}/{epochs - 1}')
@@ -64,11 +62,6 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
 
             # Iterate over data 
             for inputs, labels in dataloaders[phase]:
-                # label_map = {label: i for i, label in enumerate(set(labels))}
-                # pdb.set_trace()
-                # encoded_labels = torch.tensor(encoded_label)
-                # encoded = label_encoder.fit_transform(labels)
-                # label = torch.tensor(encoded)
 
                 inputs, labels = inputs.to(device), labels.to(device)
 
@@ -78,41 +71,24 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
-                    # pdb.set_trace()
-                # if phase == 'train':
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
-                # else:
-                    # outputs = model(inputs)
-
-                # outputs = model(inputs)
-                # loss = criterion(outputs, labels)
+                    softmax_output = F.softmax(outputs, dim=1)
+                    softmax_probs.extend(softmax_output.detach().cpu().numpy())
                 
                 # backward + optimize only if in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
+                        
                 
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
-                # running_loss += loss.item()
-                # pdb.set_trace()
                 running_corrects += torch.sum(preds == labels.data).cpu()
-                # running_corrects += acc.item()
-
-            # if phase == "val":
-            #     scheduler.step(running_loss)
-            # if phase == 'train':
-            #     scheduler.step()
 
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
             epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
-
-            # if early_stopping.early_stop(epoch_loss):
-            #     print("Early stopping triggered. Training stopped.")
-            #     break
-            # epoch_acc = running_corrects / len(dataloaders[phase].dataset)
 
             print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
             
@@ -123,7 +99,6 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
                 train_accuracies.append(epoch_acc)
             else:
                 # Append the loss and accuracy values for validation set
-                # scheduler.step(epoch_loss)
                 val_losses.append(epoch_loss)  
                 val_accuracies.append(epoch_acc)
 
@@ -132,9 +107,6 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
             
-            # scheduler.step(epoch_loss)
-            
-
         print()
 
     time_elapsed = time.time() - since
@@ -143,19 +115,18 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
 
     model.load_state_dict(best_model_wts)
 
+    num_images = 5  # Number of images to visualize
+    pdb.set_trace()
+
+    # Get a random subset of images and corresponding softmax probabilities
+    indices = np.random.choice(len(dataloaders['val'].dataset), num_images, replace=False)
+    sample_images = [dataloaders['val'].dataset[i][0] for i in indices]
+    sample_probs = [softmax_probs[i.item()] for i in indices if i.item() < len(softmax_probs)]    
+    
     # testing loop
     model.eval()
     with torch.no_grad():
         for inputs, labels in dataloaders['val']:
-            # pdb.set_trace()
-            # encoded = label_encoder.fit_transform(labels)
-            # label = torch.tensor(encoded)
-
-            # label_encoder.fit(labels)
-
-            # encoded_label = label_encoder.transform(labels)
-            # encoded_labels = torch.tensor(encoded_label)
-            
             images, labels = inputs.to(device), labels.to(device)
             outputs = model(images)
             # outputs = model.forward(images)
@@ -163,24 +134,9 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
             # ps = torch.exp(outputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
-            # correct += (predicted == labels).sum().item()
-            # val_loss += batch_loss.item() * inputs.size(0)
             correct += torch.sum(predicted == labels.data)
             predicted_labels.extend(predicted.cpu().numpy())
             true_labels.extend(labels.cpu().numpy())
-
-
-        # val_losses.append(val_loss)
-            # top_p, top_class = ps.topk(1, dim=1)  
-            # equals = top_class == labels.view(*top_class.shape)
-            # test_loss += batch_loss.item()
-            # accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
-            # test_losses.append(test_loss/len(test_dataloader))
-            # print(f"Test loss: {test_loss/len(test_dataloader):.3f}.."
-            #       f"Test accuracy: {accuracy/len(test_dataloader):.3f}")
-    # Accuracy = metrics.accuracy_score(total, correct)
-
-    # print(f'what is accuracy: {Accuracy}')
 
     print('Accuracy of the network on the 628 test images: %d %%' % (
         100 * correct / total))
@@ -188,6 +144,22 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
     target_names = ['covid', 'pneumonia', 'regular'] # Add your own class names
     report = metrics.classification_report(true_labels, predicted_labels, target_names=target_names)
     print(report)
+
+    # Plot the images and softmax probabilities
+    plt.figure(figsize=(12, 8))
+    for i in range(num_images):
+        plt.subplot(2, num_images, i+1)
+        plt.imshow(sample_images[i].permute(1, 2, 0))
+        plt.axis('off')
+
+        plt.subplot(2, num_images, num_images + i + 1)
+        plt.bar(range(len(target_names)), sample_probs[i])
+        plt.xticks(range(len(target_names)), target_names)
+        plt.xlabel('Classes')
+        plt.ylabel('Probability')
+
+    plt.tight_layout()
+    plt.show()
 
     # Plotting the graph
     plt.style.use('ggplot')
@@ -206,7 +178,7 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
     plt.plot(range(1, epochs + 1), val_accuracies, label='Validation Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Value')
-    plt.title('Training Loss and Validation Loss')
+    plt.title('Training Accuracy and Validation Accuracy')
     plt.legend(loc='lower left')
     plt.savefig('training_accuracy.png')
     
@@ -214,7 +186,6 @@ def train_model(model, dataloaders, criterion, optimizer, scheduler,epochs=3):
 
 # data path variables 
 data_path = pathlib.Path.cwd() / "data"
-# dataset = pathlib.Path(data_path) / f"cross_validation"
 train_image_data_path = pathlib.Path(data_path) / f"new_train_dataset"
 test_image_data_path = pathlib.Path(data_path) / f"new_test_dataset"
 train_label_path = pathlib.Path(data_path) / f"new_train_annotation.csv"
@@ -231,47 +202,11 @@ if __name__ == "__main__":
     # set device to cuda else cpu 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    # load labels
-    # train_img_labels = pd.read_csv(train_label_path)
-    # train_label_df = train_img_labels['label']
-    # test_img_labels = pd.read_csv(test_label_path)
-    # test_label_df = test_img_labels['label']
-
-    # train_label_np = train_label_df.to_numpy()
-    # test_label_np = test_label_df.to_numpy()
-
-    # lb = LabelBinarizer()
-    # label_encoder = LabelEncoder()
-    # label_encoder.fit(train_label_df)
-    # label_encoder.fit(test_label_df)
-
-    # train_labels = label_encoder.transform(train_label_df)
-    # test_labels = label_encoder.transform(test_label_df)
-
-    # pdb.set_trace()
-
-    # train_labels = torch.tensor(train_labels)
-    # test_labels = torch.tensor(test_labels)
-
-    # lb.fit(train_label_np)
-    # lb.fit(test_label_np)
-    # train_labels = lb.transform(train_label_np)
-    # test_labels = lb.transform(test_label_np)
-
-    # Set the number of folds
-    # num_folds = 5
-    # kfold = KFold(n_splits=num_folds, shuffle=True)
-    # for fold, (train_indices, val_indices) in enumerate(kfold.split(dataset)):
-    #     train_dataset = dataset[train_indices]
-    #     pdb.set_trace()
-
     # load train data
     train_covid_dataset = CovidUltrasoundDataset(
                                         annotations_file=train_label_path,
                                         img_dir=train_image_data_path,
-                                        # label = train_labels
                                         )
-    # print(f'len of train set of org_{i+1}: {len(train_covid_dataset)}')
     print(f'len of train set: {len(train_covid_dataset)}')
 
     train_dataloader = DataLoader(
@@ -286,9 +221,7 @@ if __name__ == "__main__":
     test_covid_dataset = CovidUltrasoundDataset(
                                             annotations_file=test_label_path,
                                             img_dir=test_image_data_path,
-                                            # label = test_labels
                                             )
-    # print(f'len of test set of org_{i+1}: {len(test_covid_dataset)}')
     print(f'len of test set: {len(test_covid_dataset)}')
 
     test_dataloader = DataLoader(
@@ -302,32 +235,11 @@ if __name__ == "__main__":
         "train": train_dataloader,
         "val": test_dataloader
     }
-    # iter the train dataset
-    # pdb.set_trace()
-
-    # train_features, train_label = next(iter(dataloaders['train']))
-
-    # pdb.set_trace()
-
-    # label_encoder = LabelEncoder()
-    # label_encoder.fit_transform(dataloaders['train'].dataset.img_labels.label)
-
-    # num_classes = len(set(train_label))
-    # print(f'num classes: {num_classes}')
-    # pdb.set_trace()
-    #     model = VGG16(3).to(device)
-    # model = models.vgg16(pretrained=True)
-    # model = models.vgg16(pretrained=True)
-    # pdb.set_trace()
     model = models.vgg16(weights='IMAGENET1K_V1')
 
     for module in model.features.children():
         if isinstance(module, nn.Conv2d):
             module.add_module('BatchNorm', nn.BatchNorm2d(module.out_channels))
-    # model = torch.hub.load('pytorch/vision:v0.10.0', 'vgg16', pretrained=True)
-
-    # for param in model.features.parameters():
-    #     param.requires_grad = False
 
     # num_classes = 3
     # num_channels = model.classifier[6].in_features // (4 * 4)
@@ -336,8 +248,6 @@ if __name__ == "__main__":
     # Modify the adaptive average pooling layer
     # model.classifier._modules['6'] = nn.AdaptiveAvgPool2d((4, 4))
 
-    # in_features = model.classifier[-1].in_features
-    # in_features = model.classifier._modules['6'].output_size[0] * model.classifier._modules['6'].output_size[1] * model.classifier._modules['6'].output_size[2]
     num_features = model.classifier[6].in_features
     # out_features = model.classifier[6].out_features
 
@@ -389,9 +299,6 @@ if __name__ == "__main__":
 
     # place the network into gpu
     model = model.to(device)
-    # torch.backends.cudnn.benchmark = True
-    # start = torch.cuda.Event(enable_timing=True)     
-    # end = torch.cuda.Event(enable_timing=True)
 
     # train_losses, test_losses, epoch_arr = [],[],[]
     train_accuracy_arr = []
@@ -409,12 +316,7 @@ if __name__ == "__main__":
     # optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     
     # Learning Rates
-    # optimizer = optim.Adam([
-    #     {'params': params_to_update_1, 'lr': 1e-4},
-    #     {'params': params_to_update_2, 'lr': 5e-4},
-    #     {'params': params_to_update_3, 'lr': 1e-3}
-    #     ]
-    
+
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
     #                                             mode='min',
     #                                             factor=0.7, 
@@ -434,4 +336,4 @@ if __name__ == "__main__":
                            criterion = criterion, 
                            optimizer = optimizer, 
                            scheduler = scheduler, 
-                           epochs=40)
+                           epochs=2)
