@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import importlib.util
 
 # Specify the path to the module
-module_path = './covidLUS\load_dataset.py'
+module_path = './covidLUS/load_dataset.py'
 
 # Load the module from the specified path
 spec = importlib.util.spec_from_file_location('module_name', module_path)
@@ -52,7 +52,7 @@ def convert_labels(src : str, dst  : str):
 def train_test_split(input_folder : str, n : int):
 
     source_folder = os.path.join('data/fl_dataset', input_folder)
-    substring = source_folder.split("\\")[-1]
+    substring = source_folder.split("/")[-1]
     org_id = substring.replace('cross_validation_', '')
 
     destination_folder = 'data/fl_dataset'
@@ -136,11 +136,11 @@ def train_test_split(input_folder : str, n : int):
 
 # Perform K fold cross-validation split
 def cross_val_split(source_folder : str):
-    org_id = source_folder.split("\\")[-1]
+    org_id = source_folder.split("/")[-1]
     NUM_FOLDS = 5
     # source_folder = 'data/fl_dataset'
     destination_folder = f'data/fl_dataset/cross_validation_{org_id}'
-
+    # pdb.set_trace
     # MAKE DIRECTORIES
     for split_ind in range(NUM_FOLDS):  
     # make directory for this split
@@ -193,8 +193,9 @@ def cross_val_split(source_folder : str):
             # print(os.path.join(source_folder, classes, file), split_path)
             shutil.copy(os.path.join(source_folder, classes, in_file), split_path)
     
+    # pdb.set_trace()
+    print(f"cross validation {org_id} success \n")
     return destination_folder
-    print(f"cross validation {org_id} success")
 
 # Split input dataset into N clients
 def split_client_dataset(src: str, n : int):
@@ -219,7 +220,7 @@ def split_client_dataset(src: str, n : int):
     for class_folder in class_folders:
         class_path = os.path.join(source_folder, class_folder)
         file_list = os.listdir(class_path)
-        random.shuffle(file_list)
+
         
         files_per_split = len(file_list) // n
         remaining_files = len(file_list) % n
