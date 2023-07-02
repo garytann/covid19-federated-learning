@@ -19,6 +19,8 @@ setup(
         "tqdm",
         "umap-learn",
         "opacus",
+        "fastapi",
+        "uvicorn"
     ],
     author="SIT-UOG",
     author_email="unknown",

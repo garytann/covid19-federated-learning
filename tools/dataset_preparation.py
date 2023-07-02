@@ -51,11 +51,11 @@ def convert_labels(src : str, dst  : str):
 # Split the data into train and test
 def train_test_split(input_folder : str, n : int):
 
-    source_folder = os.path.join('data/fl_dataset', input_folder)
+    source_folder = os.path.join('data/fl_assets', input_folder)
     substring = source_folder.split("/")[-1]
     org_id = substring.replace('cross_validation_', '')
 
-    destination_folder = 'data/fl_dataset'
+    destination_folder = 'data/fl_assets'
 
     # Create test_dataset folder
     test_folder = os.path.join(destination_folder, f'test_dataset_{org_id}')
@@ -139,7 +139,7 @@ def cross_val_split(source_folder : str):
     org_id = source_folder.split("/")[-1]
     NUM_FOLDS = 5
     # source_folder = 'data/fl_dataset'
-    destination_folder = f'data/fl_dataset/cross_validation_{org_id}'
+    destination_folder = f'data/fl_assets/cross_validation_{org_id}'
     # pdb.set_trace
     # MAKE DIRECTORIES
     for split_ind in range(NUM_FOLDS):  
@@ -200,7 +200,7 @@ def cross_val_split(source_folder : str):
 # Split input dataset into N clients
 def split_client_dataset(src: str, n : int):
     source_folder = src
-    destination_folder = 'data/fl_dataset'
+    destination_folder = 'data/fl_assets'
 
     class_folders = [folder for folder in os.listdir(source_folder) if os.path.isdir(os.path.join(source_folder, folder))]
 
@@ -278,6 +278,6 @@ def split_client_dataset(src: str, n : int):
         train_test_split(source_folder,n)
 
 
-
-split_client_dataset("data/image_dataset", 3)
+ 
+# split_client_dataset("data/image_dataset", 3)
 
