@@ -19,6 +19,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.metrics import BinaryAccuracy, Precision, Recall
 from model import get_model
+
 # Suppress logging
 tf.get_logger().setLevel('ERROR')
 
@@ -32,7 +33,7 @@ ap.add_argument(
     '-f', '--fold', type=int, default='0', help='fold to take as test data'
 )
 ap.add_argument('-lr', '--learning_rate', type=float, default=1e-4)
-ap.add_argument('-ep', '--epochs', type=int, default=2)
+ap.add_argument('-ep', '--epochs', type=int, default=10)
 ap.add_argument('-bs', '--batch_size', type=int, default=16)
 ap.add_argument('-t', '--trainable_base_layers', type=int, default=1)
 ap.add_argument('-iw', '--img_width', type=int, default=224)
@@ -88,21 +89,21 @@ def input_spec():
         tf.TensorSpec([None, 3], tf.int64)
     )
 
-def model_fn():
-    model = get_model()
-    return tff.learning.models.from_keras_model(
-        model,
-        input_spec=input_spec(),
-        loss=tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
-        lambda labels, targets: tf.reduce_mean(
-            tf.reduce_sum(
-                -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
-                axis=1
-            )
-        )
-    ),
-        metrics=[tf.keras.metrics.CategoricalAccuracy()]
-    )
+# def model_fn():
+#     model = get_model()
+#     return tff.learning.models.from_keras_model(
+#         model,
+#         input_spec=input_spec(),
+#         loss=tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
+#         lambda labels, targets: tf.reduce_mean(
+#             tf.reduce_sum(
+#                 -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
+#                 axis=1
+#             )
+#         )
+#     ),
+#         metrics=[tf.keras.metrics.CategoricalAccuracy()]
+#     )
 
 def preprocess(imagePaths, fold):
     print(f'selected fold: {fold}')
@@ -145,14 +146,12 @@ def convert_numpy(train_data, train_labels, test_data, test_labels):
 imagePaths = list(paths.list_images(DATA_DIR))
 # model = get_model()
 
-
 train_labels, train_data, test_labels, test_data = preprocess(imagePaths=imagePaths, fold = FOLD)
 
 print(
     f'\nNumber of training samples: {len(train_labels)} \n'
     f'Number of testing samples: {len(test_labels)}'
 )
-
 
 train_data, train_labels_text, test_data, test_labels_text = convert_numpy(train_data, train_labels, test_data, test_labels)
 
@@ -166,10 +165,10 @@ lb.fit(train_labels_text)
 train_labels = lb.transform(train_labels_text)
 test_labels = lb.transform(test_labels_text)
 
-trainX = train_data
-trainY = train_labels
-testX = test_data
-testY = test_labels
+trainX = train_data[:20]
+trainY = train_labels[:20]
+testX = test_data[:20]
+testY = test_labels[:20]
 
 # convert data and labels numpy array into tensor
 # Convert your NumPy arrays to TensorFlow tensors
@@ -178,8 +177,8 @@ testY = test_labels
 # testX = tf.constant(testX, dtype=tf.float32)
 # testY = tf.constant(testY, dtype=tf.float32)
 
-total_image_count = len(trainX)
-image_per_set = int(np.floor(total_image_count/2))
+# total_image_count = len(trainX)
+# image_per_set = int(np.floor(total_image_count/2))
 # Create TensorFlow datasets
 # train_dataset = tf.data.Dataset.from_tensor_slices((trainX, trainY))
 # test_dataset = tf.data.Dataset.from_tensor_slices((testX, testY))
@@ -190,14 +189,16 @@ image_per_set = int(np.floor(total_image_count/2))
 
 client_train_dataset = collections.OrderedDict()
 
-data = collections.OrderedDict((('label', trainY), ('pixels', trainX)))
-client_train_dataset[CLIENT_ID[0]] = data
+train_data = collections.OrderedDict((('label', trainY), ('pixels', trainX)))
+client_train_dataset[CLIENT_ID[0]] = train_data
 
 train_dataset = tff.simulation.datasets.TestClientData(client_train_dataset)
 
-example_dataset = train_dataset.create_tf_dataset_for_client(train_dataset.client_ids[0])
+train_example_dataset = train_dataset.create_tf_dataset_for_client(train_dataset.client_ids[0])
 sample_client = [train_dataset.client_ids[0]]
 federated_data = make_federated_data(train_dataset, sample_client)
+
+preprocessed_sample_dataset = f_preprocess(train_example_dataset)
 # example_element = next(iter(example_dataset))
 
 # preprocessed_example_dataset = f_preprocess(example_dataset)
@@ -209,7 +210,21 @@ federated_data = make_federated_data(train_dataset, sample_client)
 # train_dataset = tff.simulation.datasets.TestClientData.from_clients_and_tf_fn(CLIENT_ID, lambda x: train_dataset)
 # pdb.set_trace()
 
-
+def model_fn():
+    model = get_model()
+    return tff.learning.models.from_keras_model(
+        model,
+        input_spec= preprocessed_sample_dataset.element_spec,
+        loss=tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
+        lambda labels, targets: tf.reduce_mean(
+            tf.reduce_sum(
+                -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
+                axis=1
+            )
+        )
+    ),
+        metrics=[tf.keras.metrics.CategoricalAccuracy()]
+    )
 
 trainer = tff.learning.algorithms.build_weighted_fed_avg(
     model_fn,
@@ -219,14 +234,19 @@ trainer = tff.learning.algorithms.build_weighted_fed_avg(
 
 
 state = trainer.initialize()
+# print(trainer.initialize.type_signature.formatted_representation())
+# result = trainer.next(state, federated_data)
+# train_state = result.state
+# train_metrics = result.metrics
+# print('round  1, metrics={}'.format(train_metrics))
+
 train_hist = []
 for i in range(EPOCHS):
-    state, metrics = trainer.next(state, federated_data)
-    train_hist.append(metrics)
-
-    print(f"\rRun {i+1}/{EPOCHS}", end="")
-
-pdb.set_trace()
+    result = trainer.next(state, federated_data)
+    train_state = result.state
+    train_metrics = result.metrics
+    train_hist.append(train_metrics)
+    print('round {:2d}, metrics={}'.format(i, train_metrics))
 
 
 # evaluator = tff.learning.build_federated_evaluation(model_fn)
