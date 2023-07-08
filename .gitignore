@@ -133,6 +133,7 @@ data
 tmp
 local-worker
 *.png
+*.npy
 
 # ignore all the opener files
 opener_test_*
