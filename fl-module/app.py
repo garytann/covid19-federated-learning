@@ -2,25 +2,32 @@ import numpy as np
 import random
 import cv2
 import os
+import json
 from imutils import paths
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils import shuffle
 from sklearn.metrics import accuracy_score
 
+import uvicorn
+from fastapi import FastAPI, UploadFile, Form, Request
+import requests
+import asyncio
+import aiohttp
+from time import sleep
+
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import MaxPooling2D
-from tensorflow.keras.layers import Activation
-from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.optimizers import Adam
 
 from utils import *
 from model import *
 import pdb
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"status": "200"}
 
 # Defining the base parameters
 IMG_WIDTH, IMG_HEIGHT = 224, 224
@@ -31,6 +38,9 @@ LOG_SOFTMAX = False
 HIDDEN_SIZE = 64
 NUM_ROUND = 10
 
+client_weights_filepath_list = []   # Contains Array of Client Weights filepath
+global_dataset_size = 0             # Contains Sum of client dataset size
+client_dataset_size_list = []       # Contains Array of client dataset size
 # Loading and transforming the dataset
 imagePaths = list(paths.list_images(DATA_DIR))
 
@@ -52,69 +62,84 @@ trainY = train_labels
 testX = test_data
 testY = test_labels
 
-#create clients
-clients = create_clients(trainX, trainY, num_clients=1, initial='client')
+# #create clients
+# clients = create_clients(trainX, trainY, num_clients=1, initial='client')
 
-#process and batch the training data for each client
-clients_batched = dict()
-for (client_name, data) in clients.items():
-    clients_batched[client_name] = batch_data(data)
+# #process and batch the training data for each client
+# clients_batched = dict()
+# for (client_name, data) in clients.items():
+#     clients_batched[client_name] = batch_data(data)
 
-#process and batch the test set
-test_batched = tf.data.Dataset.from_tensor_slices(
-    (testX, testY)).batch(len(testY))
+# # process and batch the test set
+# test_batched = tf.data.Dataset.from_tensor_slices(
+#     (testX, testY)).batch(len(testY))
 
-# Initialize the hyperparameter for local training
+# # Initialize the hyperparameter for local training
 
-# number of global aggregation
-comms_round = 10
+# # number of global aggregation
+# comms_round = 2
 
-# init the global model 
-global_model = CovidLUSModel.get_model()
+# # init the global model 
+# global_model = CovidLUSModel.get_model()
 
 # metrics = Metrics((testX, testY), global_model)
-metrics = ['accuracy']
+# metrics = ['accuracy']
 
-optimizer = Adam(learning_rate=LR, decay = LR / comms_round)
+# optimizer = Adam(learning_rate=LR, decay = LR / comms_round)
 
-loss = (
-    tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
-        lambda labels, targets: tf.reduce_mean(
-            tf.reduce_sum(
-                -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
-                axis=1
+# loss = (
+#     tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
+#         lambda labels, targets: tf.reduce_mean(
+#             tf.reduce_sum(
+#                 -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
+#                 axis=1
+#             )
+#         )
+#     )
+# )
+@app.get("/client/train")
+async def client_train():
+    
+    # #create clients
+    clients = create_clients(trainX, trainY, num_clients=1, initial='client')
+
+    #process and batch the training data for each client
+    clients_batched = dict()
+    for (client_name, data) in clients.items():
+        clients_batched[client_name] = batch_data(data)
+
+    # initialize hyperparameters for local training
+    metrics = ['accuracy']
+    epoch = 2
+    optimizer = Adam(learning_rate=LR, decay = LR / epoch)
+
+    loss = (
+        tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
+            lambda labels, targets: tf.reduce_mean(
+                tf.reduce_sum(
+                    -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
+                    axis=1
+                )
             )
         )
     )
-)
-
-#commence global training loop
-for comm_round in range(comms_round):
-    print(f'initiating communication round {comm_round}')
-            
-    # get the global model's weights - will serve as the initial weights for all local models
-    global_weights = global_model.get_weights()
-    
-    #initial list to collect local model weights after scalling
-    scaled_local_weight_list = list()
+    print(f'client: initiate client model training')
+    # initiate the local model
+    if os.path.exists('global_weights.h5'):
+        local_model = tf.keras.models.load_model('global_weights.h5')
+    else:
+        local_model = CovidLUSModel.get_model()
 
     #randomize client data - using keys
     client_names= list(clients_batched.keys())
     random.shuffle(client_names)
-    
-    #loop through each client and create new local model
-    for client in client_names:
-        local_model = CovidLUSModel.get_model()
-        local_model.compile(loss=loss, 
-                      optimizer=optimizer, 
-                      metrics=metrics)
-        
-        #set local model weight to the weight of the global model
-        local_model.set_weights(global_weights)
 
+    for client in client_names:
+        # inititalize model
+        local_model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
         '''
-        before fitting the model into the local data, peform
-        image augmentation first by looping through the batched dataset
+            before fitting the model into the local data, peform
+            image augmentation first by looping through the batched dataset
         '''
         train_x = []
         train_y = []
@@ -123,35 +148,219 @@ for comm_round in range(comms_round):
             train_y.append(batch_y)
         train_x = np.concatenate(train_x)
         train_y = np.concatenate(train_y)
-        #fit local model with client's data
-        # local_model.fit(clients_batched[client],epochs=10, verbose=1)
+
+        # train local model with client's data
         local_model.fit(trainAug.flow(train_x, train_y, batch_size = 8),
-                        epochs=2, 
+                        epochs=epoch, 
                         verbose=1,
                         callbacks=[earlyStopping, reduce_lr_loss])
-        
-        #scale the model weights and add to list
-        scaling_factor = weight_scalling_factor(clients_batched, client)
-        scaled_weights = scale_model_weights(local_model.get_weights(), scaling_factor)
-        scaled_local_weight_list.append(scaled_weights)
-        
-        # pdb.set_trace()
-        #clear session to free memory after each communication round
-        clear_session()
-        
-    #to get the average over all the local model, we simply take the sum of the scaled weights
-    average_weights = sum_scaled_weights(scaled_local_weight_list)
+
+        # save the client model weights
+        local_model.save('client_weights.h5')
+
+    clear_session()
+    return {"client: completed local model training"}
+
+'''
+    1. Receive weights from global model
+        - using `tf.keras.models.load_model`
+    2. Train model locally
+    3. Send weights to server
+        - save as a byte file
+'''
+@app.post("/client/send_weights")
+async def client_send_weights():
+    model_file = open('client_weights.h5', 'rb')
+    datasize = len(trainX)
+    metadata = {
+        'datasize': datasize
+    }
+    # res = requests.post('http://localhost:8000/server/receive_client_weights', data = model_file, params = metadata)
+    async with aiohttp.ClientSession() as session:
+        async with session.post('http://localhost:8000/server/receive_client_weights', data = model_file, params = metadata) as res:
+            print(f'client: response from server:{res.text}')
+
+    return {"client: weights sent to server"}
+
+
+@app.post("/client/receive_global_weights")
+async def client_receive_global_weights(request : Request):
+    file = await request.body()
+    print(f'client: received global weights')
+    filename = "updated_global_weights.h5"
+    with open(filename, 'wb') as f:
+        f.write(file)
+    f.close()
+    return {"client: updated weights received"}
+
+'''
+    1. load the global model
+    2. get average weight from the sum-scale weights
+    3. update global model
+    4. test the global model with local test dataset 
+'''
+@app.post("/server/receive_client_weights")
+async def server_receive_client_weights(request : Request):
+    file = await request.body()
+    metadata = dict(request.query_params)
+
+    global global_dataset_size
+    global client_dataset_size_list
+
+    client_dataset_size = metadata['datasize']
+    print(f"client dataset size: {client_dataset_size}")
+
+    filename = "client_weights.h5"
+    with open(filename, 'wb') as f:
+        f.write(file)
+    f.close()
+
+    client_weights_filepath_list.append(filename)
+    client_dataset_size_list.append(int(client_dataset_size))
+    global_dataset_size = global_dataset_size + int(client_dataset_size)
+
+    await server_aggregation()
     
-    #update global model 
-    global_model.set_weights(average_weights)
-
-    #test global model and print out metrics after each communications round
-    for(X_test, Y_test) in test_batched:
-        global_acc, global_loss = test_model(X_test, Y_test, 
-                                             global_model, 
-                                             comm_round)
+    return {"server: clients weights received"}
 
 
+async def server_aggregation():
+    print(f'server: starting global model aggregation')
+    # # process and batch the test set
+    test_batched = tf.data.Dataset.from_tensor_slices((testX, testY)).batch(len(testY))
+   
+    comm_round = 10
+    for _ in range(comm_round):
+        if os.path.exists('global_weights.h5'):
+            global_model = tf.keras.models.load_model("global_weights.h5")
+        else:
+            global_model = CovidLUSModel.get_model()
+
+        print("Aggregating client weights")
+        
+        # determine client dataset contribution scale
+        weight_scaling_factor_list = weight_scaling_factor() 
+        
+        # Scale client model weight by client dataset contribution scale
+        scaled_client_weights = scale_model_weight(weight_scaling_factor_list, global_model) 
+        
+        # Sum scaled 
+        sum_scaled_weights(scaled_client_weights, global_model) 
+
+        # test global model and print out metrics after each communications round
+        for(X_test, Y_test) in test_batched:
+            global_acc, global_loss = test_model(X_test, Y_test, 
+                                                global_model, 
+                                                comm_round)
+        print("server: model aggregated")
+        await server_send_updated_weights()
+    
+    print('server: updated weights sent to client')
+
+async def server_send_updated_weights():
+    print(f'sending updated global weights to client')
+    file = open("client_weights.h5", 'rb')
+    async with aiohttp.ClientSession() as session:
+        async with session.post('http://localhost:8000/client/receive_global_weights', data = file) as res:
+            print(f'server: response from client:{res.text}')
+
+
+# #commence global training loop
+# for comm_round in range(comms_round):
+#     print(f'initiating communication round {comm_round}')
+
+#     # get the global model's weights - will serve as the initial weights for all local models
+#     # global_weights = global_model.get_weights()
+    
+#     #initial list to collect local model weights after scalling
+#     scaled_local_weight_list = list()
+
+#     #randomize client data - using keys
+#     client_names= list(clients_batched.keys())
+#     random.shuffle(client_names)
+    
+#     #loop through each client and create new local model
+#     for client in client_names:
+#         local_model = CovidLUSModel.get_model()
+#         local_model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
+        
+#         #set local model weight to the weight of the global model
+#         local_model.set_weights(global_weights)
+
+#         '''
+#         before fitting the model into the local data, peform
+#         image augmentation first by looping through the batched dataset
+#         '''
+#         train_x = []
+#         train_y = []
+#         for batch_x, batch_y in clients_batched[client]:
+#             train_x.append(batch_x)
+#             train_y.append(batch_y)
+#         train_x = np.concatenate(train_x)
+#         train_y = np.concatenate(train_y)
+#         #fit local model with client's data
+#         # local_model.fit(clients_batched[client],epochs=10, verbose=1)
+#         local_model.fit(trainAug.flow(train_x, train_y, batch_size = 8),
+#                         epochs=2, 
+#                         verbose=1,
+#                         callbacks=[earlyStopping, reduce_lr_loss, mcp_save])
+        
+#         #scale the model weights and add to list
+#         scaling_factor = weight_scalling_factor(clients_batched, client)
+#         scaled_weights = scale_model_weights(local_model.get_weights(), scaling_factor)
+#         scaled_local_weight_list.append(scaled_weights)
+#         local_model.save_weights('client_weights',save_format="h5")
+        
+#         # pdb.set_trace()
+#         #clear session to free memory after each communication round
+#         clear_session()
+
+#     # saving the local model weights
+
+#     #to get the average over all the local model, we simply take the sum of the scaled weights
+#     average_weights = sum_scaled_weights(scaled_local_weight_list)
+    
+#     #update global model 
+#     global_model.set_weights(average_weights)
+
+#     #test global model and print out metrics after each communications round
+#     for(X_test, Y_test) in test_batched:
+#         global_acc, global_loss = test_model(X_test, Y_test, 
+#                                              global_model, 
+#                                              comm_round)
+
+# # saving the global model weights at the end of the process
+#     global_model.save_weights('server_weights',save_format="h5")
+
+def weight_scaling_factor():
+    global global_dataset_size
+    # print(client_dataset_size_list)
+    
+    weight_scaling_factor_list = [client_datasize / global_dataset_size for client_datasize in client_dataset_size_list]
+    print(weight_scaling_factor_list)
+    return weight_scaling_factor_list
+
+def scale_model_weight(weight_scaling_factor_list, model):
+    scaled_client_weights = []
+    # print(client_weights_filepath_list)
+    for i, scaling_factor in enumerate(weight_scaling_factor_list):
+        print(i)
+        filepath = client_weights_filepath_list[int(i)]
+        model.load_weights(filepath)
+        client_weight = model.get_weights()
+        client_weight = np.array(client_weight, dtype='object')
+        scaled_client_weights.append(client_weight * scaling_factor)
+    return scaled_client_weights
+
+def sum_scaled_weights(scaled_client_weights, model):
+    global_weight = scaled_client_weights[0]
+    for client_weight in scaled_client_weights[1:]:
+        global_weight = np.add(global_weight, client_weight)
+    model.set_weights(global_weight)
+    model.save_weights("updated_global_weights.h5")
+
+if __name__ == '__main__':
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)
 
 
 

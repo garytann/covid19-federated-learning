@@ -67,9 +67,7 @@ class CovidLUSModel():
         model = fix_layers(model, num_flex_layers=trainable_layers + 8)
 
         return model
-    
-    def global_average_pooling(x):
-        return K.backend.mean(x, axis=(1, 2))
+
 
 # Define callbacks
 earlyStopping = EarlyStopping(
@@ -81,8 +79,9 @@ earlyStopping = EarlyStopping(
 )
 
 mcp_save = ModelCheckpoint(
+    filepath = 'best_weights',
     # os.path.join(MODEL_DIR, 'fold_' + str(FOLD) + '_epoch_{epoch:02d}'),
-    os.path.join(MODEL_DIR, 'best_weights'),
+    # os.path.join(MODEL_DIR, 'best_weights'),
     save_best_only=True,
     monitor='val_accuracy',
     mode='max',
