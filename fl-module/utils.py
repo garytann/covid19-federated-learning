@@ -131,11 +131,11 @@ def batch_data(data_shard, bs=8):
         
 #     return avg_grad
 
-def test_model(X_test, Y_test,  model, comm_round):
+def test_model(X_test, Y_test,  model):
     cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
     #logits = model.predict(X_test, batch_size=100)
     logits = model.predict(X_test)
     loss = cce(Y_test, logits)
     acc = accuracy_score(tf.argmax(logits, axis=1), tf.argmax(Y_test, axis=1))
-    print('comm_round: {} | global_acc: {:.3%} | global_loss: {}'.format(comm_round, acc, loss))
+    print('global_acc: {:.3%} | global_loss: {}'.format(acc, loss))
     return acc, loss

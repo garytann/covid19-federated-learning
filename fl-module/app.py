@@ -16,6 +16,9 @@ import io
 import tensorflow as tf
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import (
+    EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+)
 
 from utils import *
 from model import *
@@ -24,12 +27,13 @@ import pdb
 
 # Defining the base parameters
 IMG_WIDTH, IMG_HEIGHT = 224, 224
-DATA_DIR = "../data/cross_validation"
-FOLD = 0
+DATA_DIR = "../data/fl_assets/cross_validation_org_3"
+FOLD = 4
 LR = 0.01
 LOG_SOFTMAX = False
 HIDDEN_SIZE = 64
 NUM_ROUND = 10
+CLIENT = "client_3"
 
 client_weights_filepath_list = []   # Contains Array of Client Weights filepath
 global_dataset_size = 0             # Contains Sum of client dataset size
@@ -67,7 +71,7 @@ def read_root():
 async def client_train():
 
     # #create clients
-    clients = create_clients(trainX, trainY, num_clients=1, initial='client')
+    clients = create_clients(trainX, trainY, num_clients=1, initial=f'{CLIENT}')
 
     #process and batch the training data for each client
     clients_batched = dict()
@@ -76,22 +80,36 @@ async def client_train():
 
     # initialize hyperparameters for local training
     metrics = ['accuracy']
-    epoch = 10
-    optimizer = Adam(learning_rate=LR, decay = LR / epoch)
+    epoch = 20
 
-    loss = (
-        tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
-            lambda labels, targets: tf.reduce_mean(
-                tf.reduce_sum(
-                    -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
-                    axis=1
-                )
-            )
-        )
-    )
+    initial_learning_rate = 1e-4
+    # final_learning_rate = 0.0001
+    # learning_rate_decay_factor = (final_learning_rate / initial_learning_rate)**(1/epoch)
+    # steps_per_epoch = int(len(trainX)/8)
+    
+    # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    #             initial_learning_rate=initial_learning_rate,
+    #             decay_steps=steps_per_epoch,
+    #             decay_rate=learning_rate_decay_factor,
+    #             staircase=True
+    #             )
+    optimizer = Adam(learning_rate=initial_learning_rate, decay = initial_learning_rate / epoch)
+
+    loss = tf.keras.losses.CategoricalCrossentropy()
+    # loss = (
+    #     tf.keras.losses.CategoricalCrossentropy() if not LOG_SOFTMAX else (
+    #         lambda labels, targets: tf.reduce_mean(
+    #             tf.reduce_sum(
+    #                 -1 * tf.math.multiply(tf.cast(labels, tf.float32), targets),
+    #                 axis=1
+    #             )
+    #         )
+    #     )
+    # )
     print(f'client: initiate client model training')
     # initiate the local model
     if os.path.exists('global_model.h5'):
+        print(f'retrieving global model...')
         local_model = tf.keras.models.load_model('global_model.h5')
     else:
         local_model = CovidLUSModel.get_model()
@@ -119,10 +137,11 @@ async def client_train():
         local_model.fit(trainAug.flow(train_x, train_y, batch_size = 8),
                         epochs=epoch, 
                         verbose=1,
-                        callbacks=[earlyStopping, reduce_lr_loss])
+                        # validation_data = 0.1,
+                        callbacks=[earlyStopping, mcp_save, reduce_lr_loss])
 
         # save the client model weights
-        local_model.save_weights('client_weights', save_format='h5')
+        local_model.save_weights(f'{CLIENT}_weights_{FOLD}.h5', save_format='h5')
 
     clear_session()
     return {"client: completed local model training"}
@@ -130,7 +149,7 @@ async def client_train():
 
 @app.post("/client/send_weights")
 async def client_send_weights():
-    model_file = open('client_weights_1.h5', 'rb')
+    model_file = open(f'{CLIENT}_weights_{FOLD}.h5', 'rb')
     datasize = len(trainX)
     metadata = {
         'datasize': datasize
@@ -164,7 +183,7 @@ async def server_receive_client_weights(request : Request):
     client_dataset_size = metadata['datasize']
     print(f"client dataset size: {client_dataset_size}")
 
-    filename = "client_weights_1.h5"
+    filename = f"{CLIENT}_weights_{FOLD}.h5"
     with open(filename, 'wb') as f:
         f.write(file)
     f.close()
@@ -224,7 +243,7 @@ async def server_send_updated_weights():
 async def inference(file: UploadFile):
     print(f'client: starting inference')
     contents = await file.read()
-    model = tf.keras.models.load_model("global_model.h5")
+    model = tf.keras.models.load_model("global_model.h5", compile=False)
 
     # load the image
     image = Image.open(io.BytesIO(contents)).convert('RGB')
@@ -234,6 +253,7 @@ async def inference(file: UploadFile):
 
     # make predictions on the testing set
     logits = model.predict(testX)
+    print(f'logits:{logits}')
     predicted_class = np.argmax(logits, axis=1)
     return ('logits:', str(predicted_class))
 

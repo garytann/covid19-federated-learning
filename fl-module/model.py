@@ -25,7 +25,6 @@ import numpy as np
 import os
 from utils import fix_layers
 
-MODEL_DIR = '../models'
 
 class CovidLUSModel():
     
@@ -78,12 +77,13 @@ earlyStopping = EarlyStopping(
     restore_best_weights=True
 )
 
+MODEL_DIR = '/Users/gary/Desktop/SIT/YEAR3/capstone/covid19-federated-learning/fl-module/client3'
+
 mcp_save = ModelCheckpoint(
-    filepath = 'best_weights',
     # os.path.join(MODEL_DIR, 'fold_' + str(FOLD) + '_epoch_{epoch:02d}'),
-    # os.path.join(MODEL_DIR, 'best_weights'),
+    os.path.join(MODEL_DIR, 'fold_4', 'best_weights'),
     save_best_only=True,
-    monitor='val_accuracy',
+    monitor='accuracy',
     mode='max',
     verbose=1
 )
