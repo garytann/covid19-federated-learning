@@ -9,6 +9,8 @@ from sklearn.metrics import accuracy_score
 
 import uvicorn
 from fastapi import FastAPI, UploadFile, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 import aiohttp
 from PIL import Image
 import io
@@ -27,13 +29,13 @@ import pdb
 
 # Defining the base parameters
 IMG_WIDTH, IMG_HEIGHT = 224, 224
-DATA_DIR = "../data/fl_assets/cross_validation_org_3"
+DATA_DIR = "../data/fl_assets/cross_validation_org_1"
 FOLD = 4
 LR = 0.01
 LOG_SOFTMAX = False
 HIDDEN_SIZE = 64
 NUM_ROUND = 10
-CLIENT = "client_3"
+CLIENT = "client_1"
 
 client_weights_filepath_list = []   # Contains Array of Client Weights filepath
 global_dataset_size = 0             # Contains Sum of client dataset size
@@ -63,6 +65,16 @@ testY = test_labels
 
 app = FastAPI()
 
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/")
 def read_root():
     return {"status": "200"}
@@ -80,7 +92,7 @@ async def client_train():
 
     # initialize hyperparameters for local training
     metrics = ['accuracy']
-    epoch = 20
+    epoch = 10
 
     initial_learning_rate = 1e-4
     # final_learning_rate = 0.0001
@@ -255,7 +267,10 @@ async def inference(file: UploadFile):
     logits = model.predict(testX)
     print(f'logits:{logits}')
     predicted_class = np.argmax(logits, axis=1)
-    return ('logits:', str(predicted_class))
+    response_data = {'logits:', str(predicted_class)}
+    json_res = jsonable_encoder(response_data)
+    
+    return json_res
 
 def weight_scaling_factor():
     global global_dataset_size
