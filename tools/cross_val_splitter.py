@@ -13,21 +13,21 @@ ap.add_argument(
     "-d",
     "--data_dir",
     type=str,
-    # default="./data/splitted/dataset_clientA",
+    default="data/image_dataset",
     help=("Raw data path. Expects 3 or 4 subfolders with classes")
 )
 ap.add_argument(
     "-o",
     "--output_dir",
     type=str,
-    # default="./data/cross_validation/",
+    default="data/cross_validation/",
     help=("Output path where images for cross validation will be stored.")
 )
 ap.add_argument(
     "-v",
     "--video_dir",
     type=str,
-    # default="./data/convex/",
+    default="../data/pocus_videos/convex/",
     help=("Path where the videos of the database are stored")
 )
 ap.add_argument(
@@ -96,8 +96,7 @@ for classe in os.listdir(DATA_DIR):
         shutil.copy(os.path.join(DATA_DIR, classe, in_file), split_path)
 
 
-# def check_crossval(cross_val_directory="../data/cross_validation"):
-def check_crossval(cross_val_directory=OUTPUT_DIR):
+def check_crossval(cross_val_directory="data/cross_validation"):
     """
     Test method to check a cross validation split (prints number of unique f)
     """
@@ -178,7 +177,7 @@ for split in range(5):
                 train_test_dict["train"][1].extend(uni_labels)
     video_cross_val[split] = train_test_dict
 
-with open(os.path.join(".", "data", "cross_val.json"), "w") as outfile:
+with open(os.path.join("tools", "cross_val.json"), "w") as outfile:
     json.dump(video_cross_val, outfile)
 
 this_class = {"cov": "covid", "pne": "pneumonia", "reg": "regular"}
